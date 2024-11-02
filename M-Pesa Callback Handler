@@ -1,0 +1,56 @@
+codeunit 50102 "M-Pesa Callback Handler"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Web Service", 'OnRequestReceived', '', false, false)]
+    procedure OnRequestReceived(Request: HttpRequestMessage; Response: HttpResponseMessage)
+    var
+        JsonResponse: JsonObject;
+        PhoneNumber: Text;
+        Amount: Decimal;
+        Status: Text;
+        TransactionID: Text;
+        IsSuccessful: Boolean;
+    begin
+        // Check the request path to ensure it's for M-Pesa callbacks
+        if Request.RequestUri.Path = '/mpesa/callback' then begin
+            // Read the request body
+            var BodyText: Text := Request.Content.ReadAsString();
+            JsonResponse.ReadFrom(BodyText);
+
+            // Extract necessary fields from the JSON response
+            PhoneNumber := JsonResponse.GetValue('PhoneNumber').AsText();
+            Amount := JsonResponse.GetValue('Amount').AsDecimal();
+            Status := JsonResponse.GetValue('Status').AsText();
+            TransactionID := JsonResponse.GetValue('TransactionID').AsText();
+
+            // Process the callback based on status
+            IsSuccessful := UpdateTransactionStatus(PhoneNumber, Amount, Status, TransactionID);
+
+            if IsSuccessful then
+                Response.StatusCode := 200
+            else
+                Response.StatusCode := 500; // Internal server error
+
+            Response.Content.WriteFrom('{"message": "Callback processed successfully."}');
+        end else begin
+            // Handle other requests or return 404
+            Response.StatusCode := 404;
+            Response.Content.WriteFrom('{"message": "Not Found."}');
+        end;
+    end;
+
+    procedure UpdateTransactionStatus(PhoneNumber: Text; Amount: Decimal; Status: Text; TransactionID: Text): Boolean
+    var
+        Transaction: Record "YourTransactionTable"; // Replace with your actual table
+    begin
+        // Attempt to locate the transaction using PhoneNumber and TransactionID
+        if Transaction.Get(PhoneNumber, TransactionID) then begin
+            // Update the transaction based on M-Pesa callback
+            Transaction.Amount := Amount; // Assuming you store amount
+            Transaction.Status := Status; // Update the status to success or failure
+            Transaction.Modify(true); // Save changes to the database
+            exit(true);
+        end else
+            // Transaction not found
+            exit(false);
+    end;
+}
